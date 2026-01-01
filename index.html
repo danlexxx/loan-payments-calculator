@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loan Payments Calculator</title>
+    <title>Loan Payment Calculator</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -63,6 +63,18 @@
                                 <label for="maxDuration" class="form-label">Maximum Duration (months)</label>
                                 <input type="number" class="form-control" id="maxDuration" value="24" min="1" required>
                             </div>
+                            <div class="mb-3">
+                                <label for="principalPercent" class="form-label">Principal Payment (%)</label>
+                                <input type="number" class="form-control" id="principalPercent" value="10" min="0.01" max="100" step="0.01" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="dailyInterest" class="form-label">Daily Interest Rate (%)</label>
+                                <input type="number" class="form-control" id="dailyInterest" value="1" min="0" max="100" step="0.01" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="maxTotalPayment" class="form-label">Maximum Total Payment (optional)</label>
+                                <input type="number" class="form-control" id="maxTotalPayment" placeholder="Leave empty for no limit">
+                            </div>
                             <button type="submit" class="btn btn-primary">Calculate</button>
                         </form>
                     </div>
@@ -77,8 +89,8 @@
                                 <th>Month</th>
                                 <th>Remaining Balance</th>
                                 <th>Days</th>
-                                <th>Daily Interest (1%)</th>
-                                <th>Monthly Fee (10%)</th>
+                                <th id="dailyInterestHeader">Daily Interest (1%)</th>
+                                <th>Principal Payment (<span id="tablePrincipalPercent">10</span>%)</th>
                                 <th>Total Payment</th>
                             </tr>
                         </thead>
@@ -93,6 +105,10 @@
                                 <tr>
                                     <td><strong>Original Loan Amount:</strong></td>
                                     <td id="originalAmount"></td>
+                                </tr>
+                                <tr id="adjustedFeeRow" style="display:none;">
+                                    <td><strong>Adjusted Principal Payment Rate:</strong></td>
+                                    <td id="adjustedFeeRate"></td>
                                 </tr>
                                 <tr>
                                     <td><strong>Total Interest Paid:</strong></td>
@@ -139,6 +155,19 @@
             let month = parseInt($('#startMonth').val());
             let year = parseInt($('#startYear').val());
             let maxDuration = parseInt($('#maxDuration').val());
+            let maxTotalPayment = $('#maxTotalPayment').val();
+            let dailyInterestRate = parseFloat($('#dailyInterest').val()) / 100;
+            
+            // Calculate adjusted principal payment percentage if max total payment is set
+            let monthlyFeePercent = parseFloat($('#principalPercent').val()) / 100;
+            if (maxTotalPayment && maxTotalPayment !== '') {
+                maxTotalPayment = parseFloat(maxTotalPayment);
+                monthlyFeePercent = calculateAdjustedFeePercent(balance, maxDuration, maxTotalPayment, month, year, dailyInterestRate);
+                // Update the input field with adjusted value
+				const principal_payment_percent = (monthlyFeePercent * 100).toFixed(2);
+                $('#principalPercent').val(principal_payment_percent);
+                $('#tablePrincipalPercent').html(principal_payment_percent);
+            } else $('#tablePrincipalPercent').html(10);
             
             let tableBody = $('#tableBody');
             tableBody.empty();
@@ -150,15 +179,23 @@
             while (balance > 0 && monthCount < maxDuration) {
                 monthCount++;
                 let days = getDaysInMonth(month, year);
-                let dailyInterest = balance * days * 0.01;
-                let monthlyFee = balance * 0.10;
+                let dailyInterest = balance * days * dailyInterestRate;
+                let monthlyFee = balance * monthlyFeePercent;
                 let totalPayment = dailyInterest + monthlyFee;
                 
-                // Last month - pay remaining balance without interest
+                // Last month - pay remaining balance plus any interest to hit exact total
                 if (monthCount === maxDuration && balance > 0) {
-                    totalPayment = balance;
-                    dailyInterest = 0;
-                    monthlyFee = balance;
+                    if (maxTotalPayment && maxTotalPayment !== '') {
+                        // Calculate what's left to reach exact total
+                        let remaining = maxTotalPayment - totalAmountPaid;
+                        totalPayment = remaining;
+                        dailyInterest = remaining - balance;
+                        monthlyFee = balance;
+                    } else {
+                        totalPayment = balance;
+                        dailyInterest = 0;
+                        monthlyFee = balance;
+                    }
                 }
                 
                 totalInterestPaid += dailyInterest;
@@ -194,7 +231,85 @@
             $('#totalPaid').text(totalAmountPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON');
             $('#totalMonths').text(monthCount);
             
+            // Update header and show adjusted rate if different from default
+            let percentDisplay = (monthlyFeePercent * 100).toFixed(2);
+            let dailyPercentDisplay = (dailyInterestRate * 100).toFixed(2);
+            $('#monthlyFeeHeader').text('Principal Payment (' + percentDisplay + '%)');
+            $('#dailyInterestHeader').text('Daily Interest (' + dailyPercentDisplay + '%)');
+            
+            if (maxTotalPayment && maxTotalPayment !== '') {
+                $('#adjustedFeeRate').text(percentDisplay + '%');
+                $('#adjustedFeeRow').show();
+            } else {
+                $('#adjustedFeeRow').hide();
+            }
+            
             $('#resultsTable').show();
+        }
+        
+        function calculateAdjustedFeePercent(initialBalance, maxMonths, maxTotal, startMonth, startYear, dailyInterestRate) {
+            // We need to find what % of principal to pay each month
+            // so that total paid (all interest + all principal) = maxTotal
+            // and the loan is paid off within maxMonths
+            
+            let low = 0.01;
+            let high = 1.0;
+            let tolerance = 1;
+            let bestPercent = 0.10;
+            
+            for (let attempt = 0; attempt < 100; attempt++) {
+                let mid = (low + high) / 2;
+                let result = simulatePayments(initialBalance, maxMonths, mid, startMonth, startYear, dailyInterestRate);
+                
+                if (Math.abs(result.total - maxTotal) < tolerance) {
+                    bestPercent = mid;
+                    break;
+                }
+                
+                if (result.total > maxTotal) {
+                    // Paying too much total, need to pay more principal each month (finish faster, less interest)
+                    low = mid;
+                } else {
+                    // Paying too little total, need to pay less principal each month (stretch it out, more interest)
+                    high = mid;
+                }
+                bestPercent = mid;
+            }
+            
+            return bestPercent;
+        }
+        
+        function simulatePayments(balance, maxMonths, principalPercent, startMonth, startYear, dailyInterestRate) {
+            let total = 0;
+            let totalInterest = 0;
+            let month = startMonth;
+            let year = startYear;
+            
+            for (let i = 0; i < maxMonths; i++) {
+                if (balance < 0.01) break;
+                
+                let days = getDaysInMonth(month, year);
+                let dailyInterest = balance * days * dailyInterestRate;
+                let principalPayment = balance * principalPercent;
+                
+                // Last month - pay remaining balance
+                if (i === maxMonths - 1 && balance > 0) {
+                    total += balance;
+                    break;
+                }
+                
+                total += dailyInterest + principalPayment;
+                totalInterest += dailyInterest;
+                balance -= principalPayment;
+                
+                month++;
+                if (month > 11) {
+                    month = 0;
+                    year++;
+                }
+            }
+            
+            return { total: total, interest: totalInterest };
         }
     </script>
 </body>
