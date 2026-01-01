@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Payment Calculator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-bottom: 40px;
+        }
+        .card {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .table td, .table th {
+            padding: 12px;
+        }
+        h2, h4, h5 {
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <h2 class="mb-4">Loan Payment Calculator</h2>
+                
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <form id="loanForm">
+                            <div class="mb-3">
+                                <label for="loanAmount" class="form-label">Loan Amount</label>
+                                <input type="number" class="form-control" id="loanAmount" value="5000" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="startMonth" class="form-label">Start Month</label>
+                                <select class="form-control" id="startMonth">
+                                    <option value="0" selected>January</option>
+                                    <option value="1">February</option>
+                                    <option value="2">March</option>
+                                    <option value="3">April</option>
+                                    <option value="4">May</option>
+                                    <option value="5">June</option>
+                                    <option value="6">July</option>
+                                    <option value="7">August</option>
+                                    <option value="8">September</option>
+                                    <option value="9">October</option>
+                                    <option value="10">November</option>
+                                    <option value="11">December</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label for="startYear" class="form-label">Start Year</label>
+                                <input type="number" class="form-control" id="startYear" value="2026" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="maxDuration" class="form-label">Maximum Duration (months)</label>
+                                <input type="number" class="form-control" id="maxDuration" value="24" min="1" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Calculate</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="resultsTable" style="display:none;">
+                    <h4 class="mb-3">Payment Schedule</h4>
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Month</th>
+                                <th>Remaining Balance</th>
+                                <th>Days</th>
+                                <th>Daily Interest (1%)</th>
+                                <th>Monthly Fee (10%)</th>
+                                <th>Total Payment</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                        </tbody>
+                    </table>
+                    
+                    <div class="card mt-4">
+                        <div class="card-body">
+                            <h5 class="mb-3">Summary</h5>
+                            <table class="table table-borderless mb-0">
+                                <tr>
+                                    <td><strong>Original Loan Amount:</strong></td>
+                                    <td id="originalAmount"></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Total Interest Paid:</strong></td>
+                                    <td id="totalInterest"></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Total Amount Paid:</strong></td>
+                                    <td id="totalPaid"></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Number of Months:</strong></td>
+                                    <td id="totalMonths"></td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#loanForm').on('submit', function(e) {
+                e.preventDefault();
+                calculatePayments();
+            });
+        });
+
+        function getDaysInMonth(month, year) {
+            return new Date(year, month + 1, 0).getDate();
+        }
+
+        function getMonthName(month) {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return months[month];
+        }
+
+        function calculatePayments() {
+            let balance = parseFloat($('#loanAmount').val());
+            let originalAmount = balance;
+            let month = parseInt($('#startMonth').val());
+            let year = parseInt($('#startYear').val());
+            let maxDuration = parseInt($('#maxDuration').val());
+            
+            let tableBody = $('#tableBody');
+            tableBody.empty();
+            
+            let totalInterestPaid = 0;
+            let totalAmountPaid = 0;
+            let monthCount = 0;
+            
+            while (balance > 0 && monthCount < maxDuration) {
+                monthCount++;
+                let days = getDaysInMonth(month, year);
+                let dailyInterest = balance * days * 0.01;
+                let monthlyFee = balance * 0.10;
+                let totalPayment = dailyInterest + monthlyFee;
+                
+                // Last month - pay remaining balance without interest
+                if (monthCount === maxDuration && balance > 0) {
+                    totalPayment = balance;
+                    dailyInterest = 0;
+                    monthlyFee = balance;
+                }
+                
+                totalInterestPaid += dailyInterest;
+                totalAmountPaid += totalPayment;
+                
+                let row = '<tr>' +
+                    '<td>' + monthCount + '</td>' +
+                    '<td>' + getMonthName(month) + ' ' + year + '</td>' +
+                    '<td>' + balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON</td>' +
+                    '<td>' + days + '</td>' +
+                    '<td>' + dailyInterest.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON</td>' +
+                    '<td>' + monthlyFee.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON</td>' +
+                    '<td>' + totalPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON</td>' +
+                    '</tr>';
+                
+                tableBody.append(row);
+                
+                balance -= monthlyFee;
+                
+                month++;
+                if (month > 11) {
+                    month = 0;
+                    year++;
+                }
+                
+                if (balance < 0.01) {
+                    balance = 0;
+                }
+            }
+            
+            $('#originalAmount').text(originalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON');
+            $('#totalInterest').text(totalInterestPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON');
+            $('#totalPaid').text(totalAmountPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' RON');
+            $('#totalMonths').text(monthCount);
+            
+            $('#resultsTable').show();
+        }
+    </script>
+</body>
+</html>
